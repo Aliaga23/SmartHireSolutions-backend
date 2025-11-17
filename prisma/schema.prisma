@@ -5,11 +5,271 @@
 // Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
 
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+model Usuario {
+  id               String    @id @default(uuid())
+  name             String
+  lastname         String
+  correo           String    @unique
+  password         String
+  telefono         String?
+  fecha_nacimiento DateTime?
+  creado_en        DateTime  @default(now())
+
+  candidato  Candidato?
+  reclutador Reclutador?
+}
+
+model Empresa {
+  id          String       @id @default(uuid())
+  name        String
+  descripcion String?
+  area        String?
+
+  reclutadores Reclutador[]
+  vacantes     Vacante[]
+}
+
+model Reclutador {
+  id        String   @id @default(uuid())
+  posicion  String?
+
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id])
+  usuarioId String   @unique
+
+  empresa   Empresa  @relation(fields: [empresaId], references: [id])
+  empresaId String
+
+  vacantes  Vacante[]
+}
+
+model Modalidad {
+  id      String    @id @default(uuid())
+  nombre  String
+
+  vacantes Vacante[]
+}
+
+model Horario {
+  id      String    @id @default(uuid())
+  nombre  String
+
+  vacantes Vacante[]
+}
+
+model Vacante {
+  id             String    @id @default(uuid())
+  titulo         String
+  descripcion    String
+  salario_minimo Decimal?  @db.Decimal(12, 2)
+  salario_maximo Decimal?  @db.Decimal(12, 2)
+  creado_en      DateTime  @default(now())
+  estado         String
+
+  empresa      Empresa   @relation(fields: [empresaId], references: [id])
+  empresaId    String
+  reclutador   Reclutador @relation(fields: [reclutadorId], references: [id])
+  reclutadorId String
+  modalidad    Modalidad  @relation(fields: [modalidadId], references: [id])
+  modalidadId  String
+  horario      Horario    @relation(fields: [horarioId], references: [id])
+  horarioId    String
+
+  postulaciones         Postulacion[]
+  habilidadesVacante    HabilidadesVacante[]
+  lenguajesVacante      LenguajeVacante[]
+  habilidadesDiferencia HabilidadesDiferencia[]
+  recomendaciones Recomendacion[]
+}         
+
+model Postulacion {
+  id                        String   @id @default(uuid())
+  puntuacion_compatibilidad Float?
+  creado_en                 DateTime @default(now())
+
+  candidato   Candidato @relation(fields: [candidatoId], references: [id])
+  candidatoId String
+
+  vacante   Vacante @relation(fields: [vacanteId], references: [id])
+  vacanteId String
+}
+
+model Lenguaje {
+  id     String             @id @default(uuid())
+  nombre String
+
+  candidatos LenguajeCandidato[]
+  vacantes   LenguajeVacante[]
+}
+
+model LenguajeCandidato {
+  id        String    @id @default(uuid())
+  nivel     Int       // 0-10
+
+  lenguaje   Lenguaje  @relation(fields: [lenguajeId], references: [id])
+  lenguajeId String
+
+  candidato   Candidato @relation(fields: [candidatoId], references: [id])
+  candidatoId String
+}
+
+model LenguajeVacante {
+  id        String   @id @default(uuid())
+  nivel     Int      // 0-10
+
+  lenguaje   Lenguaje @relation(fields: [lenguajeId], references: [id])
+  lenguajeId String
+
+  vacante   Vacante @relation(fields: [vacanteId], references: [id])
+  vacanteId String
+}
+
+model Candidato {
+  id             String   @id @default(uuid())
+  titulo         String?
+  bio            String?
+  ubicacion      String?
+  foto_perfil_url String?
+
+  usuario   Usuario @relation(fields: [usuarioId], references: [id])
+  usuarioId String  @unique
+
+  experiencias          ExperienciaCandidato[]
+  educaciones           EducacionCandidato[]
+  habilidadesCandidato  HabilidadesCandidato[]
+  postulaciones         Postulacion[]
+  lenguajesCandidato    LenguajeCandidato[]
+  habilidadesDiferencia HabilidadesDiferencia[]
+  recomendaciones       Recomendacion[] 
+}
+
+model ExperienciaCandidato {
+  id             String   @id @default(uuid())
+  titulo         String
+  empresa        String
+  fecha_comienzo DateTime?
+  fecha_final    DateTime?
+  ubicacion      String?
+  descripcion    String?
+
+  candidato   Candidato @relation(fields: [candidatoId], references: [id])
+  candidatoId String
+}
+
+model EducacionCandidato {
+  id             String   @id @default(uuid())
+  titulo         String
+  institucion    String
+  fecha_comienzo DateTime?
+  fecha_final    DateTime?
+  descripcion    String?
+  estado         String
+
+  candidato   Candidato @relation(fields: [candidatoId], references: [id])
+  candidatoId String
+}
+
+model CategoriaHabilidad {
+  id     String       @id @default(uuid())
+  nombre String
+
+  habilidades Habilidades[]
+}
+
+model Habilidades {
+  id     String  @id @default(uuid())
+  nombre String
+
+  categoria   CategoriaHabilidad? @relation(fields: [categoriaId], references: [id])
+  categoriaId String?
+
+  habilidadesVacante    HabilidadesVacante[]
+  habilidadesCandidato  HabilidadesCandidato[]
+  habilidadesDiferencia HabilidadesDiferencia[]
+}
+
+model HabilidadesVacante {
+  id        String        @id @default(uuid())
+  nivel     Int           // 0-10
+  requerido String
+
+  vacante   Vacante     @relation(fields: [vacanteId], references: [id])
+  vacanteId String
+
+  habilidad   Habilidades @relation(fields: [habilidadId], references: [id])
+  habilidadId String
+}
+
+model HabilidadesCandidato {
+  id    String @id @default(uuid())
+  nivel Int    // 0-10
+
+  candidato   Candidato  @relation(fields: [candidatoId], references: [id])
+  candidatoId String
+
+  habilidad   Habilidades @relation(fields: [habilidadId], references: [id])
+  habilidadId String
+}
+
+model HabilidadesDiferencia {
+  id         String @id @default(uuid())
+  diferencia Int    // diferencia entre nivel requerido y nivel del candidato
+
+  candidato   Candidato  @relation(fields: [candidatoId], references: [id])
+  candidatoId String
+
+  vacante   Vacante @relation(fields: [vacanteId], references: [id])
+  vacanteId String
+
+  habilidad   Habilidades @relation(fields: [habilidadId], references: [id])
+  habilidadId String
+
+  recomendaciones Recomendacion[]
+}
+
+model Recomendacion {
+  id        String   @id @default(uuid())
+  mensaje   String
+  creado_en DateTime @default(now())
+
+  habilidadesDiferencia   HabilidadesDiferencia @relation(fields: [habilidadesDiferenciaId], references: [id])
+  habilidadesDiferenciaId String
+
+  candidato   Candidato @relation(fields: [candidatoId], references: [id])
+  candidatoId String
+  
+  vacante   Vacante @relation(fields: [vacanteId], references: [id])
+  vacanteId String
+
+
+  cursos RecomendacionCurso[]
+}
+
+model RecomendacionCurso {
+  id     String @id @default(uuid())
+  estado String
+
+  recomendacion   Recomendacion @relation(fields: [recomendacionId], references: [id])
+  recomendacionId String
+
+  curso   Curso @relation(fields: [cursoId], references: [id])
+  cursoId String
+}
+
+model Curso {
+  id       String @id @default(uuid())
+  nombre   String
+  proveedor String?
+  url      String?
+  nivel    Int
+  duracion Int?
+
+  recomendaciones RecomendacionCurso[]
 }
