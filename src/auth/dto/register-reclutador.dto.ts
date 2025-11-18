@@ -1,4 +1,4 @@
-import { IsEmail, IsString, MinLength, IsOptional, IsDateString, IsUUID } from 'class-validator';
+import { IsEmail, IsString, MinLength, IsOptional, IsDateString } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class RegisterReclutadorDto {
@@ -30,14 +30,6 @@ export class RegisterReclutadorDto {
   @IsOptional()
   @IsDateString()
   fecha_nacimiento?: string;
-
-  // Campos específicos del reclutador
-  @ApiProperty({ 
-    example: '550e8400-e29b-41d4-a716-446655440000', 
-    description: 'ID de la empresa (debe existir previamente)' 
-  })
-  @IsUUID()
-  empresaId: string;
 
   @ApiProperty({ example: 'HR Manager', description: 'Posición en la empresa', required: false })
   @IsOptional()

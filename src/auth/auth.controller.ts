@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, UseGuards } from '@nestjs/common';
+import { Controller, Post, Body, Get, UseGuards, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
@@ -6,6 +6,7 @@ import { RegisterCandidatoDto } from './dto/register-candidato.dto';
 import { RegisterReclutadorDto } from './dto/register-reclutador.dto';
 import { RegisterEmpresaDto } from './dto/register-empresa.dto';
 import { LoginDto } from './dto/login.dto';
+import { InvitarReclutadorDto } from '../email/dto/invitar-reclutador.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { Roles } from './decorators/roles.decorator';
@@ -26,11 +27,21 @@ export class AuthController {
     return this.authService.registerCandidato(registerCandidatoDto);
   }
 
+  @Post('invitar/reclutador')
+  @ApiOperation({ summary: 'Enviar invitación por email a un reclutador' })
+  @ApiResponse({ status: 200, description: 'Invitación enviada exitosamente' })
+  async invitarReclutador(@Body() invitarReclutadorDto: InvitarReclutadorDto) {
+    return this.authService.invitarReclutador(invitarReclutadorDto);
+  }
+
   @Post('register/reclutador')
-  @ApiOperation({ summary: 'Registrar reclutador (requiere empresa existente)' })
+  @ApiOperation({ summary: 'Registrar reclutador con token de invitación' })
   @ApiResponse({ status: 201, description: 'Reclutador registrado exitosamente' })
-  async registerReclutador(@Body() registerReclutadorDto: RegisterReclutadorDto) {
-    return this.authService.registerReclutador(registerReclutadorDto);
+  async registerReclutador(
+    @Body() registerReclutadorDto: RegisterReclutadorDto,
+    @Query('token') token: string,
+  ) {
+    return this.authService.registerReclutador(registerReclutadorDto, token);
   }
 
   @Post('register/empresa')

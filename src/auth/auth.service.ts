@@ -1,18 +1,21 @@
-import { Injectable, ConflictException, UnauthorizedException, NotFoundException } from '@nestjs/common';
+import { Injectable, ConflictException, UnauthorizedException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
+import { EmailService } from '../email/email.service';
 import { RegisterDto } from './dto/register.dto';
 import { RegisterCandidatoDto } from './dto/register-candidato.dto';
 import { RegisterReclutadorDto } from './dto/register-reclutador.dto';
 import { RegisterEmpresaDto } from './dto/register-empresa.dto';
 import { LoginDto } from './dto/login.dto';
+import { InvitarReclutadorDto } from '../email/dto/invitar-reclutador.dto';
 
 @Injectable()
 export class AuthService {
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
+    private emailService: EmailService,
   ) {}
 
   async register(registerDto: RegisterDto) {
@@ -182,23 +185,26 @@ export class AuthService {
     };
   }
 
-  async registerReclutador(registerReclutadorDto: RegisterReclutadorDto) {
-    const [existingUser, empresa, hashedPassword] = await Promise.all([
+  async registerReclutador(registerReclutadorDto: RegisterReclutadorDto, token: string) {
+    const invitacion = this.emailService.validarToken(token);
+
+    if (!invitacion) {
+      throw new BadRequestException('Token de invitación inválido o expirado');
+    }
+
+    if (invitacion.email !== registerReclutadorDto.correo) {
+      throw new BadRequestException('El correo no coincide con la invitación');
+    }
+
+    const [existingUser, hashedPassword] = await Promise.all([
       this.prisma.usuario.findUnique({
         where: { correo: registerReclutadorDto.correo },
-      }),
-      this.prisma.empresa.findUnique({
-        where: { id: registerReclutadorDto.empresaId },
       }),
       bcrypt.hash(registerReclutadorDto.password, 10),
     ]);
 
     if (existingUser) {
       throw new ConflictException('El correo ya está registrado');
-    }
-
-    if (!empresa) {
-      throw new NotFoundException('La empresa especificada no existe');
     }
 
     const usuario = await this.prisma.usuario.create({
@@ -214,7 +220,7 @@ export class AuthService {
         reclutador: {
           create: {
             posicion: registerReclutadorDto.posicion,
-            empresaId: registerReclutadorDto.empresaId,
+            empresaId: invitacion.empresaId,
           },
         },
       },
@@ -234,12 +240,43 @@ export class AuthService {
       },
     });
 
-    const token = this.generateToken(usuario.id, usuario.correo);
+    this.emailService.consumirToken(token);
+
+    const tokenJWT = this.generateToken(usuario.id, usuario.correo);
 
     return {
       usuario,
       tipoUsuario: 'reclutador',
-      token,
+      token: tokenJWT,
+    };
+  }
+
+  async invitarReclutador(invitarReclutadorDto: InvitarReclutadorDto) {
+    const empresa = await this.prisma.empresa.findUnique({
+      where: { id: invitarReclutadorDto.empresaId },
+    });
+
+    if (!empresa) {
+      throw new NotFoundException('La empresa especificada no existe');
+    }
+
+    const existingUser = await this.prisma.usuario.findUnique({
+      where: { correo: invitarReclutadorDto.email },
+    });
+
+    if (existingUser) {
+      throw new ConflictException('El correo ya está registrado');
+    }
+
+    await this.emailService.enviarInvitacionReclutador(
+      invitarReclutadorDto.email,
+      invitarReclutadorDto.empresaId,
+      empresa.name,
+    );
+
+    return {
+      message: 'Invitación enviada exitosamente',
+      email: invitarReclutadorDto.email,
     };
   }
 

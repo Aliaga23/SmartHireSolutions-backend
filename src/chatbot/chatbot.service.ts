@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ChatMessageDto } from './dto/chat-message.dto';
 import OpenAI from 'openai';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 interface ChatSession {
   sessionId: string;
@@ -122,7 +122,7 @@ El sistema tiene más de 150 cursos reales en tecnologías como:
   }
 
   async chat(chatMessageDto: ChatMessageDto): Promise<{ sessionId: string; respuesta: string }> {
-    let sessionId = chatMessageDto.sessionId || uuidv4();
+    let sessionId = chatMessageDto.sessionId || randomUUID();
     let session: ChatSession;
 
     // Crear o recuperar sesión
