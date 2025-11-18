@@ -59,99 +59,140 @@ export class PostulacionService {
     });
   }
 
-  async findAllByCandidato(candidatoId: string) {
-    return this.prisma.postulacion.findMany({
-      where: { candidatoId },
-      include: {
-        vacante: {
-          select: {
-            id: true,
-            titulo: true,
-            descripcion: true,
-            salario_minimo: true,
-            salario_maximo: true,
-            estado: true,
-            creado_en: true,
-            empresa: {
-              select: {
-                id: true,
-                name: true,
-                area: true,
-              }
-            },
-            modalidad: {
-              select: {
-                id: true,
-                nombre: true,
-              }
-            },
-            horario: {
-              select: {
-                id: true,
-                nombre: true,
-              }
+  async findAllByCandidato(candidatoId: string, page: number = 1, limit: number = 10) {
+    const skip = (page - 1) * limit;
+
+    const [data, total] = await Promise.all([
+      this.prisma.postulacion.findMany({
+        where: { candidatoId },
+        include: {
+          vacante: {
+            select: {
+              id: true,
+              titulo: true,
+              descripcion: true,
+              salario_minimo: true,
+              salario_maximo: true,
+              estado: true,
+              creado_en: true,
+              empresa: {
+                select: {
+                  id: true,
+                  name: true,
+                  area: true,
+                }
+              },
+              modalidad: {
+                select: {
+                  id: true,
+                  nombre: true,
+                }
+              },
+              horario: {
+                select: {
+                  id: true,
+                  nombre: true,
+                }
+              },
             },
           },
         },
+        orderBy: {
+          creado_en: 'desc',
+        },
+        skip,
+        take: limit,
+      }),
+      this.prisma.postulacion.count({ where: { candidatoId } }),
+    ]);
+
+    return {
+      data,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
       },
-      orderBy: {
-        creado_en: 'desc',
-      },
-    });
+    };
   }
 
-  async findAllByVacante(vacanteId: string, reclutadorId: string) {
-    return this.prisma.postulacion.findMany({
-      where: { 
-        vacanteId,
-        vacante: {
-          reclutadorId
-        }
-      },
-      include: {
-        candidato: {
-          include: {
-            usuario: {
-              select: {
-                name: true,
-                lastname: true,
-                correo: true,
-                telefono: true,
-              },
-            },
-            habilidadesCandidato: {
-              include: {
-                habilidad: {
-                  select: {
-                    id: true,
-                    nombre: true,
-                    categoria: {
-                      select: {
-                        id: true,
-                        nombre: true,
-                      }
-                    }
-                  }
+  async findAllByVacante(vacanteId: string, reclutadorId: string, page: number = 1, limit: number = 10) {
+    const skip = (page - 1) * limit;
+
+    const [data, total] = await Promise.all([
+      this.prisma.postulacion.findMany({
+        where: { 
+          vacanteId,
+          vacante: {
+            reclutadorId
+          }
+        },
+        include: {
+          candidato: {
+            include: {
+              usuario: {
+                select: {
+                  name: true,
+                  lastname: true,
+                  correo: true,
+                  telefono: true,
                 },
               },
-            },
-            lenguajesCandidato: {
-              include: {
-                lenguaje: {
-                  select: {
-                    id: true,
-                    nombre: true,
-                  }
+              habilidadesCandidato: {
+                include: {
+                  habilidad: {
+                    select: {
+                      id: true,
+                      nombre: true,
+                      categoria: {
+                        select: {
+                          id: true,
+                          nombre: true,
+                        }
+                      }
+                    }
+                  },
+                },
+              },
+              lenguajesCandidato: {
+                include: {
+                  lenguaje: {
+                    select: {
+                      id: true,
+                      nombre: true,
+                    }
+                  },
                 },
               },
             },
           },
         },
+        orderBy: {
+          puntuacion_compatibilidad: 'desc',
+        },
+        skip,
+        take: limit,
+      }),
+      this.prisma.postulacion.count({
+        where: {
+          vacanteId,
+          vacante: {
+            reclutadorId
+          }
+        }
+      }),
+    ]);
+
+    return {
+      data,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
       },
-      orderBy: {
-        puntuacion_compatibilidad: 'desc',
-      },
-    });
+    };
   }
 
   async findOne(id: string, usuarioId: string, role: string) {
@@ -161,7 +202,10 @@ export class PostulacionService {
 
     const postulacion = await this.prisma.postulacion.findFirst({
       where: whereClause,
-      include: {
+      select: {
+        id: true,
+        puntuacion_compatibilidad: true,
+        creado_en: true,
         candidato: {
           select: {
             id: true,
@@ -179,17 +223,13 @@ export class PostulacionService {
               }
             },
             habilidadesCandidato: {
-              include: {
+              select: {
+                id: true,
+                nivel: true,
                 habilidad: {
                   select: {
                     id: true,
                     nombre: true,
-                    categoria: {
-                      select: {
-                        id: true,
-                        nombre: true,
-                      }
-                    }
                   }
                 }
               },
@@ -198,7 +238,9 @@ export class PostulacionService {
               }
             },
             lenguajesCandidato: {
-              include: {
+              select: {
+                id: true,
+                nivel: true,
                 lenguaje: {
                   select: {
                     id: true,
@@ -222,7 +264,7 @@ export class PostulacionService {
               },
               orderBy: {
                 fecha_comienzo: 'desc',
-              }
+              },
             },
             experiencias: {
               select: {
@@ -236,7 +278,7 @@ export class PostulacionService {
               },
               orderBy: {
                 fecha_comienzo: 'desc',
-              }
+              },
             },
           },
         },
@@ -252,7 +294,6 @@ export class PostulacionService {
               select: {
                 id: true,
                 name: true,
-                descripcion: true,
                 area: true,
               }
             },
@@ -266,11 +307,6 @@ export class PostulacionService {
               select: {
                 id: true,
                 nombre: true,
-              }
-            },
-            reclutador: {
-              select: {
-                id: true,
               }
             },
           },

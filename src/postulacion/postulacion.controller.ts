@@ -6,6 +6,7 @@ import {
   Param,
   Delete,
   UseGuards,
+  Query,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -45,8 +46,14 @@ export class PostulacionController {
   @Roles('candidato')
   @ApiOperation({ summary: 'Ver mis postulaciones (solo candidatos)' })
   @ApiResponse({ status: 200, description: 'Lista de postulaciones del candidato' })
-  findMine(@GetUser('candidato.id') candidatoId: string) {
-    return this.postulacionService.findAllByCandidato(candidatoId);
+  findMine(
+    @GetUser('candidato.id') candidatoId: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const pageNum = page ? parseInt(page) : 1;
+    const limitNum = limit ? parseInt(limit) : 10;
+    return this.postulacionService.findAllByCandidato(candidatoId, pageNum, limitNum);
   }
 
   @Get('vacante/:vacanteId')
@@ -66,8 +73,12 @@ export class PostulacionController {
   findByVacante(
     @Param('vacanteId') vacanteId: string,
     @GetUser('reclutador.id') reclutadorId: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
-    return this.postulacionService.findAllByVacante(vacanteId, reclutadorId);
+    const pageNum = page ? parseInt(page) : 1;
+    const limitNum = limit ? parseInt(limit) : 10;
+    return this.postulacionService.findAllByVacante(vacanteId, reclutadorId, pageNum, limitNum);
   }
 
   @Get(':id')
