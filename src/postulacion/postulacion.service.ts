@@ -64,10 +64,33 @@ export class PostulacionService {
       where: { candidatoId },
       include: {
         vacante: {
-          include: {
-            empresa: true,
-            modalidad: true,
-            horario: true,
+          select: {
+            id: true,
+            titulo: true,
+            descripcion: true,
+            salario_minimo: true,
+            salario_maximo: true,
+            estado: true,
+            creado_en: true,
+            empresa: {
+              select: {
+                id: true,
+                name: true,
+                area: true,
+              }
+            },
+            modalidad: {
+              select: {
+                id: true,
+                nombre: true,
+              }
+            },
+            horario: {
+              select: {
+                id: true,
+                nombre: true,
+              }
+            },
           },
         },
       },
@@ -78,22 +101,13 @@ export class PostulacionService {
   }
 
   async findAllByVacante(vacanteId: string, reclutadorId: string) {
-    // Verificar que la vacante pertenece al reclutador
-    const vacante = await this.prisma.vacante.findFirst({
-      where: {
-        id: vacanteId,
-        reclutadorId,
-      },
-    });
-
-    if (!vacante) {
-      throw new ForbiddenException(
-        'No tienes permiso para ver las postulaciones de esta vacante',
-      );
-    }
-
     return this.prisma.postulacion.findMany({
-      where: { vacanteId },
+      where: { 
+        vacanteId,
+        vacante: {
+          reclutadorId
+        }
+      },
       include: {
         candidato: {
           include: {
@@ -108,15 +122,27 @@ export class PostulacionService {
             habilidadesCandidato: {
               include: {
                 habilidad: {
-                  include: {
-                    categoria: true,
-                  },
+                  select: {
+                    id: true,
+                    nombre: true,
+                    categoria: {
+                      select: {
+                        id: true,
+                        nombre: true,
+                      }
+                    }
+                  }
                 },
               },
             },
             lenguajesCandidato: {
               include: {
-                lenguaje: true,
+                lenguaje: {
+                  select: {
+                    id: true,
+                    nombre: true,
+                  }
+                },
               },
             },
           },
@@ -129,53 +155,146 @@ export class PostulacionService {
   }
 
   async findOne(id: string, usuarioId: string, role: string) {
-    const postulacion = await this.prisma.postulacion.findUnique({
-      where: { id },
+    const whereClause = role === 'candidato' 
+      ? { id, candidato: { usuarioId } }
+      : { id, vacante: { reclutador: { usuarioId } } };
+
+    const postulacion = await this.prisma.postulacion.findFirst({
+      where: whereClause,
       include: {
         candidato: {
-          include: {
-            usuario: true,
+          select: {
+            id: true,
+            titulo: true,
+            bio: true,
+            ubicacion: true,
+            foto_perfil_url: true,
+            usuario: {
+              select: {
+                name: true,
+                lastname: true,
+                correo: true,
+                telefono: true,
+                fecha_nacimiento: true,
+              }
+            },
+            habilidadesCandidato: {
+              include: {
+                habilidad: {
+                  select: {
+                    id: true,
+                    nombre: true,
+                    categoria: {
+                      select: {
+                        id: true,
+                        nombre: true,
+                      }
+                    }
+                  }
+                }
+              },
+              orderBy: {
+                nivel: 'desc',
+              }
+            },
+            lenguajesCandidato: {
+              include: {
+                lenguaje: {
+                  select: {
+                    id: true,
+                    nombre: true,
+                  }
+                }
+              },
+              orderBy: {
+                nivel: 'desc',
+              }
+            },
+            educaciones: {
+              select: {
+                id: true,
+                titulo: true,
+                institucion: true,
+                estado: true,
+                fecha_comienzo: true,
+                fecha_final: true,
+                descripcion: true,
+              },
+              orderBy: {
+                fecha_comienzo: 'desc',
+              }
+            },
+            experiencias: {
+              select: {
+                id: true,
+                titulo: true,
+                empresa: true,
+                ubicacion: true,
+                fecha_comienzo: true,
+                fecha_final: true,
+                descripcion: true,
+              },
+              orderBy: {
+                fecha_comienzo: 'desc',
+              }
+            },
           },
         },
         vacante: {
-          include: {
-            empresa: true,
-            reclutador: true,
+          select: {
+            id: true,
+            titulo: true,
+            descripcion: true,
+            estado: true,
+            salario_minimo: true,
+            salario_maximo: true,
+            empresa: {
+              select: {
+                id: true,
+                name: true,
+                descripcion: true,
+                area: true,
+              }
+            },
+            modalidad: {
+              select: {
+                id: true,
+                nombre: true,
+              }
+            },
+            horario: {
+              select: {
+                id: true,
+                nombre: true,
+              }
+            },
+            reclutador: {
+              select: {
+                id: true,
+              }
+            },
           },
         },
       },
     });
 
     if (!postulacion) {
-      throw new NotFoundException('Postulación no encontrada');
-    }
-
-    // Verificar permisos
-    if (role === 'candidato' && postulacion.candidato.usuarioId !== usuarioId) {
-      throw new ForbiddenException('No tienes permiso para ver esta postulación');
-    }
-
-    if (
-      role === 'reclutador' &&
-      postulacion.vacante.reclutador.usuarioId !== usuarioId
-    ) {
-      throw new ForbiddenException('No tienes permiso para ver esta postulación');
+      throw new NotFoundException('Postulacion no encontrada o no tienes permiso');
     }
 
     return postulacion;
   }
 
   async remove(id: string, candidatoId: string) {
-    const postulacion = await this.prisma.postulacion.findUnique({
-      where: { id },
+    const postulacion = await this.prisma.postulacion.findFirst({
+      where: { 
+        id,
+        candidatoId
+      },
     });
 
     if (!postulacion) {
-      throw new NotFoundException('Postulación no encontrada');
-    }
-
-    if (postulacion.candidatoId !== candidatoId) {
-      throw new ForbiddenException('No tienes permiso para eliminar esta postulación');
+      throw new NotFoundException('Postulacion no encontrada o no tienes permiso');
     }
 
     return this.prisma.postulacion.delete({
