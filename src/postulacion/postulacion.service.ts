@@ -7,6 +7,15 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePostulacionDto } from './dto/create-postulacion.dto';
 
+export interface FilterCandidatosDto {
+  vacanteId?: string;
+  habilidadId?: string;
+  lenguajeId?: string;
+  nivelHabilidadMin?: number;
+  nivelLenguajeMin?: number;
+  compatibilidadMin?: number;
+}
+
 @Injectable()
 export class PostulacionService {
   constructor(private prisma: PrismaService) {}
@@ -336,5 +345,139 @@ export class PostulacionService {
     return this.prisma.postulacion.delete({
       where: { id },
     });
+  }
+
+  async filterCandidatosByEmpresa(
+    empresaId: string,
+    filters: FilterCandidatosDto,
+    page: number = 1,
+    limit: number = 10,
+  ) {
+    const skip = (page - 1) * limit;
+
+    // Construir el WHERE dinámicamente
+    const whereClause: any = {
+      vacante: {
+        empresaId,
+      },
+    };
+
+    if (filters.vacanteId) {
+      whereClause.vacanteId = filters.vacanteId;
+    }
+
+    if (filters.compatibilidadMin !== undefined) {
+      whereClause.puntuacion_compatibilidad = {
+        gte: filters.compatibilidadMin,
+      };
+    }
+
+    // Filtros de habilidades
+    if (filters.habilidadId) {
+      whereClause.candidato = {
+        ...whereClause.candidato,
+        habilidadesCandidato: {
+          some: {
+            habilidadId: filters.habilidadId,
+            ...(filters.nivelHabilidadMin && {
+              nivel: { gte: filters.nivelHabilidadMin },
+            }),
+          },
+        },
+      };
+    }
+
+    // Filtros de lenguajes
+    if (filters.lenguajeId) {
+      whereClause.candidato = {
+        ...whereClause.candidato,
+        lenguajesCandidato: {
+          some: {
+            lenguajeId: filters.lenguajeId,
+            ...(filters.nivelLenguajeMin && {
+              nivel: { gte: filters.nivelLenguajeMin },
+            }),
+          },
+        },
+      };
+    }
+
+    const [data, total] = await Promise.all([
+      this.prisma.postulacion.findMany({
+        where: whereClause,
+        select: {
+          id: true,
+          puntuacion_compatibilidad: true,
+          creado_en: true,
+          vacante: {
+            select: {
+              id: true,
+              titulo: true,
+            },
+          },
+          candidato: {
+            select: {
+              id: true,
+              titulo: true,
+              ubicacion: true,
+              usuario: {
+                select: {
+                  name: true,
+                  lastname: true,
+                  correo: true,
+                  telefono: true,
+                },
+              },
+              habilidadesCandidato: {
+                select: {
+                  nivel: true,
+                  habilidad: {
+                    select: {
+                      id: true,
+                      nombre: true,
+                    },
+                  },
+                },
+                orderBy: {
+                  nivel: 'desc',
+                },
+              },
+              lenguajesCandidato: {
+                select: {
+                  nivel: true,
+                  lenguaje: {
+                    select: {
+                      id: true,
+                      nombre: true,
+                    },
+                  },
+                },
+                orderBy: {
+                  nivel: 'desc',
+                },
+              },
+            },
+          },
+        },
+        orderBy: [
+          { puntuacion_compatibilidad: 'desc' },
+          { creado_en: 'desc' },
+        ],
+        skip,
+        take: limit,
+      }),
+      this.prisma.postulacion.count({ where: whereClause }),
+    ]);
+
+    return {
+      data,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+      filtrosAplicados: filters,
+    };
   }
 }

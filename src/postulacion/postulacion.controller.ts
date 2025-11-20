@@ -56,6 +56,39 @@ export class PostulacionController {
     return this.postulacionService.findAllByCandidato(candidatoId, pageNum, limitNum);
   }
 
+  @Get('empresa/candidatos')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('reclutador')
+  @ApiOperation({ summary: 'Filtrar candidatos de postulaciones de la empresa (solo reclutadores)' })
+  @ApiResponse({ status: 200, description: 'Lista filtrada de candidatos' })
+  filterCandidatosByEmpresa(
+    @GetUser('reclutador.empresaId') empresaId: string,
+    @Query('vacanteId') vacanteId?: string,
+    @Query('habilidadId') habilidadId?: string,
+    @Query('lenguajeId') lenguajeId?: string,
+    @Query('nivelHabilidadMin') nivelHabilidadMin?: string,
+    @Query('nivelLenguajeMin') nivelLenguajeMin?: string,
+    @Query('compatibilidadMin') compatibilidadMin?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const pageNum = page ? parseInt(page) : 1;
+    const limitNum = limit ? parseInt(limit) : 10;
+    return this.postulacionService.filterCandidatosByEmpresa(
+      empresaId,
+      {
+        vacanteId,
+        habilidadId,
+        lenguajeId,
+        nivelHabilidadMin: nivelHabilidadMin ? parseInt(nivelHabilidadMin) : undefined,
+        nivelLenguajeMin: nivelLenguajeMin ? parseInt(nivelLenguajeMin) : undefined,
+        compatibilidadMin: compatibilidadMin ? parseFloat(compatibilidadMin) : undefined,
+      },
+      pageNum,
+      limitNum,
+    );
+  }
+
   @Get('vacante/:vacanteId')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('reclutador')
