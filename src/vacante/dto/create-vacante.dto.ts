@@ -7,13 +7,13 @@ export class HabilidadVacanteDto {
   @IsUUID()
   habilidadId: string;
 
-  @ApiProperty({ example: 4, minimum: 1, maximum: 5 })
+  @ApiProperty({ example: 7, minimum: 1, maximum: 10 })
   @IsInt()
   @Min(1)
-  @Max(5)
+  @Max(10)
   nivel: number;
 
-  @ApiProperty({ example: 'OBLIGATORIO', enum: ['OBLIGATORIO', 'DESEABLE'] })
+  @ApiProperty({ example: 'SI', enum: ['SI', 'NO'] })
   @IsString()
   requerido: string;
 }
@@ -23,10 +23,10 @@ export class LenguajeVacanteDto {
   @IsUUID()
   lenguajeId: string;
 
-  @ApiProperty({ example: 3, minimum: 1, maximum: 5 })
+  @ApiProperty({ example: 8, minimum: 1, maximum: 10 })
   @IsInt()
   @Min(1)
-  @Max(5)
+  @Max(10)
   nivel: number;
 }
 
