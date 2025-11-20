@@ -36,7 +36,7 @@ export class CandidatoController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('candidato')
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Procesar CV con OCR y actualizar perfil automáticamente' })
+  @ApiOperation({ summary: 'Procesar imagen de CV con GPT-4 Vision y actualizar perfil automáticamente' })
   parseCv(@GetUser() user: any, @Body() parseCvDto: ParseCvDto) {
     return this.candidatoService.parseCvWithGPT(user.candidato.id, parseCvDto);
   }

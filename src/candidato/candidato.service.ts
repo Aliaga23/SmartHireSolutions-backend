@@ -209,7 +209,7 @@ export class CandidatoService {
   }
 
   async parseCvWithGPT(candidatoId: string, parseCvDto: ParseCvDto) {
-    const { cvText } = parseCvDto;
+    const { imageData } = parseCvDto;
 
     // 1. Obtener todas las habilidades y lenguajes disponibles de la BD
     const [todasHabilidades, todosLenguajes] = await Promise.all([
@@ -224,22 +224,20 @@ export class CandidatoService {
     const habilidadesDisponibles = todasHabilidades.map(h => h.nombre).join(', ');
     const lenguajesDisponibles = todosLenguajes.map(l => l.nombre).join(', ');
 
-    // 2. Usar GPT para extraer información estructurada del CV
-    const prompt = `Analiza el siguiente CV y extrae la información estructurada.
-
-CV:
-${cvText}
+    // 2. Usar GPT-4 Vision para extraer información estructurada del CV
+    const prompt = `Analiza la imagen del CV y extrae la información estructurada.
 
 Habilidades técnicas disponibles en el sistema: ${habilidadesDisponibles}
 
 Idiomas disponibles en el sistema: ${lenguajesDisponibles}
 
 INSTRUCCIONES:
-1. Para "bio": Resume la experiencia profesional en 2-3 oraciones (máximo 200 palabras)
-2. Para "titulo": Extrae el título profesional actual o el puesto más reciente
-3. Para "ubicacion": Extrae la ciudad/país de residencia
-4. Para "habilidades": Identifica SOLO las habilidades que coincidan EXACTAMENTE con las disponibles en el sistema. Para cada una, asigna un nivel del 1-10 basado en la experiencia mencionada
-5. Para "lenguajes": Identifica SOLO los idiomas que coincidan con los disponibles. Asigna nivel 1-10 (1-3=básico, 4-6=intermedio, 7-8=avanzado, 9-10=nativo)
+1. Lee TODO el texto visible en la imagen del CV
+2. Para "bio": Resume la experiencia profesional en 2-3 oraciones (máximo 200 palabras)
+3. Para "titulo": Extrae el título profesional actual o el puesto más reciente
+4. Para "ubicacion": Extrae la ciudad/país de residencia
+5. Para "habilidades": Identifica SOLO las habilidades que coincidan EXACTAMENTE con las disponibles en el sistema. Para cada una, asigna un nivel del 1-10 basado en la experiencia mencionada
+6. Para "lenguajes": Identifica SOLO los idiomas que coincidan con los disponibles. Asigna nivel 1-10 (1-3=básico, 4-6=intermedio, 7-8=avanzado, 9-10=nativo)
 
 Responde SOLO con un JSON en este formato exacto:
 {
@@ -254,23 +252,27 @@ Responde SOLO con un JSON en este formato exacto:
   ]
 }`;
 
-    const completion = await this.openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+    const response = await this.openai.chat.completions.create({
+      model: 'gpt-4o',
       messages: [
         {
-          role: 'system',
-          content: 'Eres un experto en análisis de CVs. Extraes información estructurada de manera precisa.',
-        },
-        {
           role: 'user',
-          content: prompt,
+          content: [
+            { type: 'text', text: prompt },
+            {
+              type: 'image_url',
+              image_url: {
+                url: imageData,
+              },
+            },
+          ],
         },
       ],
       response_format: { type: 'json_object' },
-      temperature: 0.3,
+      max_tokens: 2000,
     });
 
-    const datosExtraidos = JSON.parse(completion.choices[0].message.content || '{}');
+    const datosExtraidos = JSON.parse(response.choices[0].message.content || '{}');
 
     // 3. Crear mapas de búsqueda para habilidades y lenguajes
     const habilidadMap = new Map(todasHabilidades.map(h => [h.nombre.toLowerCase(), h.id]));
