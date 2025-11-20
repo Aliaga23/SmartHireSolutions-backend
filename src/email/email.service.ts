@@ -111,4 +111,15 @@ export class EmailService {
       }
     }
   }
+
+  getInvitacionesPendientesPorEmpresa(empresaId: string): number {
+    let count = 0;
+    const ahora = new Date();
+    for (const invitacion of this.invitacionesPendientes.values()) {
+      if (invitacion.empresaId === empresaId && invitacion.expiraEn > ahora) {
+        count++;
+      }
+    }
+    return count;
+  }
 }
