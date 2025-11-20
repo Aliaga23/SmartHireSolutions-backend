@@ -245,7 +245,7 @@ El sistema tiene más de 150 cursos reales en tecnologías como:
       model: 'gpt-4o-mini',
       messages: session.messages as any,
       tools: tools as any,
-      tool_choice: 'auto',
+      ...(tools && { tool_choice: 'auto' }),
       temperature: 0.7,
       max_tokens: 500,
     });
