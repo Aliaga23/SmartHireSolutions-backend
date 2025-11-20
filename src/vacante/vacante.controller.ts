@@ -25,16 +25,51 @@ export class VacanteController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Obtener todas las vacantes con filtros opcionales' })
+  @ApiOperation({ summary: 'Obtener todas las vacantes con filtros avanzados y paginación' })
   @ApiQuery({ name: 'estado', required: false, enum: ['ABIERTA', 'CERRADA', 'PAUSADA'] })
   @ApiQuery({ name: 'empresaId', required: false })
   @ApiQuery({ name: 'modalidadId', required: false })
+  @ApiQuery({ name: 'horarioId', required: false })
+  @ApiQuery({ name: 'habilidadId', required: false })
+  @ApiQuery({ name: 'lenguajeId', required: false })
+  @ApiQuery({ name: 'nivelHabilidadMin', required: false })
+  @ApiQuery({ name: 'nivelLenguajeMin', required: false })
+  @ApiQuery({ name: 'salarioMin', required: false })
+  @ApiQuery({ name: 'salarioMax', required: false })
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
   findAll(
     @Query('estado') estado?: string,
     @Query('empresaId') empresaId?: string,
     @Query('modalidadId') modalidadId?: string,
+    @Query('horarioId') horarioId?: string,
+    @Query('habilidadId') habilidadId?: string,
+    @Query('lenguajeId') lenguajeId?: string,
+    @Query('nivelHabilidadMin') nivelHabilidadMin?: string,
+    @Query('nivelLenguajeMin') nivelLenguajeMin?: string,
+    @Query('salarioMin') salarioMin?: string,
+    @Query('salarioMax') salarioMax?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
-    return this.vacanteService.findAll({ estado, empresaId, modalidadId });
+    const pageNum = page ? parseInt(page) : 1;
+    const limitNum = limit ? parseInt(limit) : 10;
+    return this.vacanteService.findAll(
+      {
+        estado,
+        empresaId,
+        modalidadId,
+        horarioId,
+        habilidadId,
+        lenguajeId,
+        nivelHabilidadMin: nivelHabilidadMin ? parseInt(nivelHabilidadMin) : undefined,
+        nivelLenguajeMin: nivelLenguajeMin ? parseInt(nivelLenguajeMin) : undefined,
+        salarioMin: salarioMin ? parseFloat(salarioMin) : undefined,
+        salarioMax: salarioMax ? parseFloat(salarioMax) : undefined,
+      },
+      pageNum,
+      limitNum,
+    );
   }
 
   @Get(':id')
