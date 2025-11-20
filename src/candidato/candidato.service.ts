@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, ConflictException } from '@nestjs/common';
 import { UpdateCandidatoDto } from './dto/update-candidato.dto';
 import { ParseCvDto } from './dto/parse-cv.dto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -66,13 +66,24 @@ export class CandidatoService {
   }
 
   async addHabilidad(candidatoId: string, habilidadId: string, nivel: number) {
-    // Verificar que la habilidad existe
-    const habilidad = await this.prisma.habilidades.findUnique({
-      where: { id: habilidadId },
-    });
+    // Verificar que la habilidad existe y si ya está agregada
+    const [habilidad, existing] = await Promise.all([
+      this.prisma.habilidades.findUnique({
+        where: { id: habilidadId },
+      }),
+      this.prisma.habilidadesCandidato.findUnique({
+        where: {
+          candidatoId_habilidadId: { candidatoId, habilidadId },
+        },
+      }),
+    ]);
 
     if (!habilidad) {
       throw new NotFoundException('Habilidad no encontrada');
+    }
+
+    if (existing) {
+      throw new ConflictException('Ya tienes esta habilidad agregada. Usa PUT para actualizar el nivel.');
     }
 
     return this.prisma.habilidadesCandidato.create({
