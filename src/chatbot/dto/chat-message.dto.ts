@@ -1,5 +1,23 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString, IsOptional } from 'class-validator';
+import { IsNotEmpty, IsString, IsOptional, IsObject, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
+
+class ContextoDto {
+  @ApiProperty({ description: 'Página actual del usuario', example: '/candidatos/perfil', required: false })
+  @IsOptional()
+  @IsString()
+  pagina?: string;
+
+  @ApiProperty({ description: 'Sección específica', example: 'experiencia-laboral', required: false })
+  @IsOptional()
+  @IsString()
+  seccion?: string;
+
+  @ApiProperty({ description: 'Acción que está realizando', example: 'editando', required: false })
+  @IsOptional()
+  @IsString()
+  accion?: string;
+}
 
 export class ChatMessageDto {
   @ApiProperty({ 
@@ -18,4 +36,15 @@ export class ChatMessageDto {
   @IsOptional()
   @IsString()
   sessionId?: string;
+
+  @ApiProperty({
+    description: 'Contexto de navegación del usuario',
+    type: ContextoDto,
+    required: false
+  })
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => ContextoDto)
+  contexto?: ContextoDto;
 }

@@ -9,10 +9,16 @@ interface InvitacionPendiente {
   expiraEn: Date;
 }
 
+interface TokenRecuperacion {
+  email: string;
+  expiraEn: Date;
+}
+
 @Injectable()
 export class EmailService {
   private transporter;
   private invitacionesPendientes = new Map<string, InvitacionPendiente>();
+  private tokensRecuperacion = new Map<string, TokenRecuperacion>();
 
   constructor() {
     this.transporter = nodemailer.createTransport({
@@ -121,5 +127,74 @@ export class EmailService {
       }
     }
     return count;
+  }
+
+  async enviarCorreoRecuperacion(email: string): Promise<string> {
+    const token = randomBytes(32).toString('hex');
+    const expiraEn = new Date();
+    expiraEn.setHours(expiraEn.getHours() + 1); // Expira en 1 hora
+
+    this.tokensRecuperacion.set(token, {
+      email,
+      expiraEn,
+    });
+
+    const recuperacionUrl = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
+
+    const mailOptions = {
+      from: `"SmartHireSolutions" <${process.env.SMTP_USERNAME}>`,
+      to: email,
+      subject: 'Recuperación de Contraseña - SmartHireSolutions',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #2563eb;">Recuperación de Contraseña</h2>
+          
+          <p>Has solicitado restablecer tu contraseña en SmartHireSolutions.</p>
+          
+          <p>Para crear una nueva contraseña, haz clic en el siguiente enlace:</p>
+          
+          <a href="${recuperacionUrl}" 
+             style="display: inline-block; background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin: 20px 0;">
+            Restablecer Contraseña
+          </a>
+          
+          <p style="color: #666; font-size: 14px;">
+            Este enlace expirará en 1 hora por seguridad.
+          </p>
+          
+          <p style="color: #666; font-size: 14px;">
+            Si no solicitaste este cambio, puedes ignorar este correo de forma segura.
+          </p>
+          
+          <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
+          
+          <p style="color: #999; font-size: 12px;">
+            SmartHireSolutions - Plataforma de Reclutamiento Inteligente
+          </p>
+        </div>
+      `,
+    };
+
+    await this.transporter.sendMail(mailOptions);
+    return token;
+  }
+
+  validarTokenRecuperacion(token: string): string | null {
+    const recuperacion = this.tokensRecuperacion.get(token);
+    
+    if (!recuperacion) {
+      return null;
+    }
+
+    if (new Date() > recuperacion.expiraEn) {
+      this.tokensRecuperacion.delete(token);
+      return null;
+    }
+
+    return recuperacion.email;
+  }
+
+  consumirTokenRecuperacion(token: string): void {
+    this.tokensRecuperacion.delete(token);
   }
 }

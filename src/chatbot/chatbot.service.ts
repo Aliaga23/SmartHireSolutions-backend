@@ -1,12 +1,14 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ConflictException } from '@nestjs/common';
 import { ChatMessageDto } from './dto/chat-message.dto';
 import { PrismaService } from '../prisma/prisma.service';
+import { VacanteService } from '../vacante/vacante.service';
+import { PostulacionService } from '../postulacion/postulacion.service';
 import OpenAI from 'openai';
 import { randomUUID } from 'crypto';
 
 interface ChatSession {
   sessionId: string;
-  messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
+  messages: Array<{ role: 'user' | 'assistant' | 'system' | 'tool'; content: string }>;
   createdAt: Date;
   lastActive: Date;
 }
@@ -113,7 +115,11 @@ El sistema tiene más de 150 cursos reales en tecnologías como:
 - Sé conciso pero completo
 - Si no sabes algo, di que no tienes esa información`;
 
-  constructor(private prisma: PrismaService) {
+  constructor(
+    private prisma: PrismaService,
+    private vacanteService: VacanteService,
+    private postulacionService: PostulacionService,
+  ) {
     this.openai = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
     });
@@ -132,6 +138,21 @@ El sistema tiene más de 150 cursos reales en tecnologías como:
     if (user) {
       const userInfo = await this.getUserContext(user);
       systemContext += `\n\n**INFORMACIÓN DEL USUARIO ACTUAL:**\n${userInfo}`;
+    }
+
+    // Agregar contexto de navegación si está disponible
+    if (chatMessageDto.contexto) {
+      systemContext += `\n\n**CONTEXTO DE NAVEGACIÓN:**`;
+      if (chatMessageDto.contexto.pagina) {
+        systemContext += `\n- Página actual: ${chatMessageDto.contexto.pagina}`;
+      }
+      if (chatMessageDto.contexto.seccion) {
+        systemContext += `\n- Sección: ${chatMessageDto.contexto.seccion}`;
+      }
+      if (chatMessageDto.contexto.accion) {
+        systemContext += `\n- Acción: ${chatMessageDto.contexto.accion}`;
+      }
+      systemContext += `\n\nUsa este contexto para dar respuestas más específicas y relevantes a la ubicación actual del usuario.`;
     }
 
     // Crear o recuperar sesión
@@ -154,15 +175,141 @@ El sistema tiene más de 150 cursos reales en tecnologías como:
       content: chatMessageDto.mensaje,
     });
 
+    // Definir funciones disponibles para GPT (solo si el usuario está autenticado)
+    const tools = user ? [
+      {
+        type: 'function',
+        function: {
+          name: 'buscar_vacantes',
+          description: 'Busca vacantes disponibles según criterios específicos como título, empresa, habilidades, salario, etc.',
+          parameters: {
+            type: 'object',
+            properties: {
+              titulo: {
+                type: 'string',
+                description: 'Título o palabra clave para buscar en el título de la vacante'
+              },
+              empresaId: {
+                type: 'string',
+                description: 'ID de la empresa para filtrar vacantes'
+              },
+              habilidadId: {
+                type: 'string',
+                description: 'ID de habilidad requerida'
+              },
+              salarioMin: {
+                type: 'number',
+                description: 'Salario mínimo deseado'
+              },
+              limit: {
+                type: 'number',
+                description: 'Cantidad máxima de resultados (por defecto 5)',
+                default: 5
+              }
+            }
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'postular_vacante',
+          description: 'Postula al candidato autenticado a una vacante específica usando su ID',
+          parameters: {
+            type: 'object',
+            properties: {
+              vacanteId: {
+                type: 'string',
+                description: 'ID de la vacante a la que se desea postular'
+              }
+            },
+            required: ['vacanteId']
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'mis_postulaciones',
+          description: 'Obtiene todas las postulaciones del candidato autenticado con información detallada de cada vacante y estado',
+          parameters: {
+            type: 'object',
+            properties: {}
+          }
+        }
+      }
+    ] : undefined;
+
     // Llamar a GPT
     const completion = await this.openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: session.messages as any,
+      tools: tools as any,
+      tool_choice: 'auto',
       temperature: 0.7,
       max_tokens: 500,
     });
 
-    const respuesta = completion.choices[0].message.content || 'Lo siento, no pude generar una respuesta.';
+    const responseMessage = completion.choices[0].message;
+
+    // Si GPT decidió llamar a una función
+    if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
+      // Agregar la respuesta de GPT con tool_calls al historial
+      session.messages.push(responseMessage as any);
+
+      // Procesar cada llamada a función
+      for (const toolCall of responseMessage.tool_calls) {
+        // Type guard para asegurar que tenemos el tipo correcto
+        if (toolCall.type === 'function') {
+          const functionName = toolCall.function.name;
+          const functionArgs = JSON.parse(toolCall.function.arguments);
+
+          let functionResult;
+
+          try {
+            if (functionName === 'buscar_vacantes') {
+              functionResult = await this.buscarVacantes(functionArgs);
+            } else if (functionName === 'postular_vacante') {
+              functionResult = await this.postularVacante(user.candidato?.id, functionArgs.vacanteId);
+            } else if (functionName === 'mis_postulaciones') {
+              functionResult = await this.obtenerMisPostulaciones(user.candidato?.id);
+            }
+          } catch (error) {
+            functionResult = { error: error.message };
+          }
+
+          // Agregar resultado de la función al historial
+          session.messages.push({
+            role: 'tool',
+            tool_call_id: toolCall.id,
+            content: JSON.stringify(functionResult),
+          } as any);
+        }
+      }
+
+      // Llamar a GPT nuevamente con los resultados de las funciones
+      const secondCompletion = await this.openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: session.messages as any,
+        temperature: 0.7,
+        max_tokens: 500,
+      });
+
+      const respuesta = secondCompletion.choices[0].message.content || 'Lo siento, no pude generar una respuesta.';
+
+      session.messages.push({
+        role: 'assistant',
+        content: respuesta,
+      });
+
+      return {
+        sessionId,
+        respuesta,
+      };
+    }
+
+    // Si no hubo tool calls, procesar normalmente
+    const respuesta = responseMessage.content || 'Lo siento, no pude generar una respuesta.';
 
     // Guardar respuesta del asistente
     session.messages.push({
@@ -260,50 +407,55 @@ El sistema tiene más de 150 cursos reales en tecnologías como:
       });
 
       if (candidato) {
-        context += `**Tipo:** Candidato\n`;
-        context += `**Nombre:** ${candidato.usuario.name} ${candidato.usuario.lastname}\n`;
-        context += `**Email:** ${candidato.usuario.correo}\n`;
+        context += `Tipo: Candidato\n`;
+        context += `Nombre: ${candidato.usuario.name} ${candidato.usuario.lastname}\n`;
+        context += `Email: ${candidato.usuario.correo}\n`;
         
         if (candidato.titulo) {
-          context += `**Título profesional:** ${candidato.titulo}\n`;
+          context += `Título profesional: ${candidato.titulo}\n`;
         }
         
         if (candidato.ubicacion) {
-          context += `**Ubicación:** ${candidato.ubicacion}\n`;
+          context += `Ubicación: ${candidato.ubicacion}\n`;
         }
 
         if (candidato.habilidadesCandidato.length > 0) {
           const habilidades = candidato.habilidadesCandidato
             .map(h => `${h.habilidad.nombre} (nivel ${h.nivel}/10)`)
             .join(', ');
-          context += `**Habilidades principales:** ${habilidades}\n`;
+          context += `Habilidades principales: ${habilidades}\n`;
         }
 
         if (candidato.lenguajesCandidato.length > 0) {
           const lenguajes = candidato.lenguajesCandidato
             .map(l => `${l.lenguaje.nombre} (nivel ${l.nivel}/10)`)
             .join(', ');
-          context += `**Idiomas:** ${lenguajes}\n`;
+          context += `Idiomas: ${lenguajes}\n`;
         }
 
         if (candidato.experiencias.length > 0) {
           const experiencias = candidato.experiencias
             .map(e => `${e.titulo} en ${e.empresa}`)
             .join(', ');
-          context += `**Experiencia reciente:** ${experiencias}\n`;
+          context += `Experiencia reciente: ${experiencias}\n`;
         }
 
         if (candidato.educaciones.length > 0) {
           const educaciones = candidato.educaciones
             .map(e => `${e.titulo} - ${e.institucion} (${e.estado})`)
             .join(', ');
-          context += `**Educación:** ${educaciones}\n`;
+          context += `Educación: ${educaciones}\n`;
         }
 
         if (candidato.postulaciones.length > 0) {
-          context += `**Postulaciones recientes:** ${candidato.postulaciones.length} vacantes\n`;
+          context += `Postulaciones recientes: ${candidato.postulaciones.length} vacantes\n`;
           const postulaciones = candidato.postulaciones
-            .map(p => `${p.vacante.titulo} en ${p.vacante.empresa.name} (compatibilidad: ${p.puntuacion_compatibilidad?.toFixed(0) || 'N/A'}%)`)
+            .map(p => {
+              const compatibilidad = p.puntuacion_compatibilidad !== null && p.puntuacion_compatibilidad !== undefined
+                ? `${(Number(p.puntuacion_compatibilidad) * 100).toFixed(1)}%`
+                : 'Pendiente';
+              return `${p.vacante.titulo} en ${p.vacante.empresa.name} (compatibilidad: ${compatibilidad})`;
+            })
             .slice(0, 3)
             .join(', ');
           context += `  - ${postulaciones}\n`;
@@ -346,21 +498,21 @@ El sistema tiene más de 150 cursos reales en tecnologías como:
       });
 
       if (reclutador) {
-        context += `**Tipo:** Reclutador\n`;
-        context += `**Nombre:** ${reclutador.usuario.name} ${reclutador.usuario.lastname}\n`;
-        context += `**Email:** ${reclutador.usuario.correo}\n`;
-        context += `**Empresa:** ${reclutador.empresa.name}\n`;
+        context += `Tipo: Reclutador\n`;
+        context += `Nombre: ${reclutador.usuario.name} ${reclutador.usuario.lastname}\n`;
+        context += `Email: ${reclutador.usuario.correo}\n`;
+        context += `Empresa: ${reclutador.empresa.name}\n`;
         
         if (reclutador.empresa.area) {
-          context += `**Área de la empresa:** ${reclutador.empresa.area}\n`;
+          context += `Área de la empresa: ${reclutador.empresa.area}\n`;
         }
 
         if (reclutador.posicion) {
-          context += `**Posición:** ${reclutador.posicion}\n`;
+          context += `Posición: ${reclutador.posicion}\n`;
         }
 
         if (reclutador.vacantes.length > 0) {
-          context += `**Vacantes publicadas:** ${reclutador.vacantes.length}\n`;
+          context += `Vacantes publicadas: ${reclutador.vacantes.length}\n`;
           const vacantes = reclutador.vacantes
             .map(v => `${v.titulo} (${v.estado}, ${v._count.postulaciones} postulaciones)`)
             .slice(0, 3)
@@ -379,6 +531,150 @@ El sistema tiene más de 150 cursos reales en tecnologías como:
       if (now - session.lastActive.getTime() > this.SESSION_TIMEOUT) {
         this.sessions.delete(sessionId);
       }
+    }
+  }
+
+  /**
+   * Busca vacantes disponibles según criterios específicos
+   */
+  private async buscarVacantes(params: {
+    titulo?: string;
+    empresaId?: string;
+    habilidadId?: string;
+    salarioMin?: number;
+    limit?: number;
+  }) {
+    try {
+      const limit = params.limit || 5;
+      
+      const result = await this.vacanteService.findAll(
+        {
+          titulo: params.titulo,
+          empresaId: params.empresaId,
+          habilidadId: params.habilidadId,
+          salarioMin: params.salarioMin,
+          estado: 'ABIERTA', // Solo vacantes abiertas
+        },
+        1,
+        limit,
+      );
+
+      // Formatear resultado para GPT
+      return {
+        vacantes: result.data.map((v: any) => ({
+          id: v.id,
+          titulo: v.titulo,
+          descripcion: v.descripcion,
+          empresa: v.empresa?.nombre || 'N/A',
+          salario: `${v.salario_minimo || 0} - ${v.salario_maximo || 0}`,
+          modalidad: v.modalidad?.nombre || 'N/A',
+          horario: v.horario?.nombre || 'N/A',
+          ubicacion: v.ubicacion || 'N/A',
+          postulaciones: v._count?.postulaciones || 0,
+        })),
+        total: result.pagination.total,
+        mensaje: result.data.length === 0 
+          ? 'No se encontraron vacantes con esos criterios.'
+          : `Se encontraron ${result.pagination.total} vacante(s).`,
+      };
+    } catch (error) {
+      return {
+        error: 'Error al buscar vacantes',
+        mensaje: error.message,
+      };
+    }
+  }
+
+  /**
+   * Postula a un candidato a una vacante específica
+   */
+  private async postularVacante(candidatoId: string, vacanteId: string) {
+    try {
+      if (!candidatoId) {
+        return {
+          error: 'Usuario no autenticado',
+          mensaje: 'Debes iniciar sesión como candidato para postularte a vacantes.',
+        };
+      }
+
+      const postulacion = await this.postulacionService.create(candidatoId, { vacanteId });
+
+      return {
+        success: true,
+        mensaje: `Te has postulado exitosamente a la vacante "${postulacion.vacante.titulo}".`,
+        postulacion: {
+          id: postulacion.id,
+          vacante: postulacion.vacante.titulo,
+          fecha: postulacion.creado_en,
+        },
+      };
+    } catch (error) {
+      // Manejar errores específicos
+      if (error instanceof ConflictException) {
+        return {
+          error: 'Postulación duplicada',
+          mensaje: error.message,
+        };
+      }
+
+      return {
+        error: 'Error al postular',
+        mensaje: error.message || 'No se pudo completar la postulación.',
+      };
+    }
+  }
+
+  /**
+   * Obtiene todas las postulaciones del candidato autenticado
+   */
+  private async obtenerMisPostulaciones(candidatoId: string) {
+    try {
+      if (!candidatoId) {
+        return {
+          error: 'Usuario no autenticado',
+          mensaje: 'Debes iniciar sesión como candidato para ver tus postulaciones.',
+        };
+      }
+
+      const postulaciones = await this.prisma.postulacion.findMany({
+        where: { candidatoId },
+        include: {
+          vacante: {
+            include: {
+              empresa: { select: { name: true } },
+              modalidad: { select: { nombre: true } },
+              horario: { select: { nombre: true } },
+            },
+          },
+        },
+        orderBy: { creado_en: 'desc' },
+      });
+
+      return {
+        total: postulaciones.length,
+        postulaciones: postulaciones.map((p) => ({
+          id: p.id,
+          vacanteId: p.vacanteId,
+          vacanteTitulo: p.vacante.titulo,
+          empresa: p.vacante.empresa.name,
+          salario: `${p.vacante.salario_minimo || 0} - ${p.vacante.salario_maximo || 0}`,
+          modalidad: p.vacante.modalidad?.nombre || 'N/A',
+          horario: p.vacante.horario?.nombre || 'N/A',
+          fechaPostulacion: p.creado_en.toLocaleDateString('es-ES'),
+          compatibilidad: p.puntuacion_compatibilidad !== null && p.puntuacion_compatibilidad !== undefined
+            ? `${(Number(p.puntuacion_compatibilidad) * 100).toFixed(1)}%` 
+            : 'Pendiente de calcular',
+          estadoVacante: p.vacante.estado,
+        })),
+        mensaje: postulaciones.length === 0 
+          ? 'No tienes postulaciones aún.' 
+          : `Tienes ${postulaciones.length} postulación(es).`,
+      };
+    } catch (error) {
+      return {
+        error: 'Error al obtener postulaciones',
+        mensaje: error.message,
+      };
     }
   }
 }

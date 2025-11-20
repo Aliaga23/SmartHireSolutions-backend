@@ -6,6 +6,8 @@ import { RegisterCandidatoDto } from './dto/register-candidato.dto';
 import { RegisterReclutadorDto } from './dto/register-reclutador.dto';
 import { RegisterEmpresaDto } from './dto/register-empresa.dto';
 import { LoginDto } from './dto/login.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { InvitarReclutadorDto } from '../email/dto/invitar-reclutador.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
@@ -83,5 +85,23 @@ export class AuthController {
       message: 'Este endpoint es solo para reclutadores',
       usuario: user,
     };
+  }
+
+  @Post('forgot-password')
+  @ApiOperation({ summary: 'Solicitar recuperación de contraseña' })
+  @ApiResponse({ status: 200, description: 'Correo de recuperación enviado' })
+  async forgotPassword(@Body() forgotPasswordDto: ForgotPasswordDto) {
+    return this.authService.forgotPassword(forgotPasswordDto.correo);
+  }
+
+  @Post('reset-password')
+  @ApiOperation({ summary: 'Restablecer contraseña con token' })
+  @ApiResponse({ status: 200, description: 'Contraseña actualizada exitosamente' })
+  @ApiResponse({ status: 400, description: 'Token inválido o expirado' })
+  async resetPassword(@Body() resetPasswordDto: ResetPasswordDto) {
+    return this.authService.resetPassword(
+      resetPasswordDto.token,
+      resetPasswordDto.nuevaPassword,
+    );
   }
 }

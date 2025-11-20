@@ -340,4 +340,50 @@ export class AuthService {
       token,
     };
   }
+
+  async forgotPassword(correo: string): Promise<{ message: string }> {
+    const usuario = await this.prisma.usuario.findUnique({
+      where: { correo },
+    });
+
+    if (!usuario) {
+      // Por seguridad, no revelamos si el correo existe
+      return { 
+        message: 'Si el correo existe, recibirás un enlace de recuperación.' 
+      };
+    }
+
+    await this.emailService.enviarCorreoRecuperacion(correo);
+
+    return { 
+      message: 'Si el correo existe, recibirás un enlace de recuperación.' 
+    };
+  }
+
+  async resetPassword(token: string, nuevaPassword: string): Promise<{ message: string }> {
+    const email = this.emailService.validarTokenRecuperacion(token);
+
+    if (!email) {
+      throw new BadRequestException('Token inválido o expirado');
+    }
+
+    const usuario = await this.prisma.usuario.findUnique({
+      where: { correo: email },
+    });
+
+    if (!usuario) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    const hashedPassword = await bcrypt.hash(nuevaPassword, 10);
+
+    await this.prisma.usuario.update({
+      where: { id: usuario.id },
+      data: { password: hashedPassword },
+    });
+
+    this.emailService.consumirTokenRecuperacion(token);
+
+    return { message: 'Contraseña actualizada exitosamente' };
+  }
 }
