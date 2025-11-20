@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ChatMessageDto } from './dto/chat-message.dto';
+import { PrismaService } from '../prisma/prisma.service';
 import OpenAI from 'openai';
 import { randomUUID } from 'crypto';
 
@@ -112,7 +113,7 @@ El sistema tiene más de 150 cursos reales en tecnologías como:
 - Sé conciso pero completo
 - Si no sabes algo, di que no tienes esa información`;
 
-  constructor() {
+  constructor(private prisma: PrismaService) {
     this.openai = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
     });
@@ -121,15 +122,23 @@ El sistema tiene más de 150 cursos reales en tecnologías como:
     setInterval(() => this.cleanExpiredSessions(), 10 * 60 * 1000);
   }
 
-  async chat(chatMessageDto: ChatMessageDto): Promise<{ sessionId: string; respuesta: string }> {
+  async chat(chatMessageDto: ChatMessageDto, user?: any): Promise<{ sessionId: string; respuesta: string }> {
     let sessionId = chatMessageDto.sessionId || randomUUID();
     let session: ChatSession;
+
+    // Crear contexto personalizado si el usuario está autenticado
+    let systemContext = this.SYSTEM_CONTEXT;
+    
+    if (user) {
+      const userInfo = await this.getUserContext(user);
+      systemContext += `\n\n**INFORMACIÓN DEL USUARIO ACTUAL:**\n${userInfo}`;
+    }
 
     // Crear o recuperar sesión
     if (!this.sessions.has(sessionId)) {
       session = {
         sessionId,
-        messages: [{ role: 'system', content: this.SYSTEM_CONTEXT }],
+        messages: [{ role: 'system', content: systemContext }],
         createdAt: new Date(),
         lastActive: new Date(),
       };
@@ -183,6 +192,185 @@ El sistema tiene más de 150 cursos reales en tecnologías como:
       return { message: 'Sesión eliminada exitosamente' };
     }
     return { message: 'Sesión no encontrada' };
+  }
+
+  private async getUserContext(user: any): Promise<string> {
+    if (!user) return '';
+
+    let context = '';
+
+    // Si es candidato
+    if (user.candidato) {
+      const candidato = await this.prisma.candidato.findUnique({
+        where: { id: user.candidato.id },
+        include: {
+          usuario: {
+            select: {
+              name: true,
+              lastname: true,
+              correo: true,
+            },
+          },
+          habilidadesCandidato: {
+            include: {
+              habilidad: true,
+            },
+            take: 10,
+            orderBy: { nivel: 'desc' },
+          },
+          lenguajesCandidato: {
+            include: {
+              lenguaje: true,
+            },
+          },
+          experiencias: {
+            select: {
+              titulo: true,
+              empresa: true,
+            },
+            take: 3,
+            orderBy: { fecha_comienzo: 'desc' },
+          },
+          educaciones: {
+            select: {
+              titulo: true,
+              institucion: true,
+              estado: true,
+            },
+            take: 2,
+          },
+          postulaciones: {
+            select: {
+              vacante: {
+                select: {
+                  titulo: true,
+                  empresa: {
+                    select: {
+                      name: true,
+                    },
+                  },
+                },
+              },
+              puntuacion_compatibilidad: true,
+            },
+            take: 5,
+            orderBy: { creado_en: 'desc' },
+          },
+        },
+      });
+
+      if (candidato) {
+        context += `**Tipo:** Candidato\n`;
+        context += `**Nombre:** ${candidato.usuario.name} ${candidato.usuario.lastname}\n`;
+        context += `**Email:** ${candidato.usuario.correo}\n`;
+        
+        if (candidato.titulo) {
+          context += `**Título profesional:** ${candidato.titulo}\n`;
+        }
+        
+        if (candidato.ubicacion) {
+          context += `**Ubicación:** ${candidato.ubicacion}\n`;
+        }
+
+        if (candidato.habilidadesCandidato.length > 0) {
+          const habilidades = candidato.habilidadesCandidato
+            .map(h => `${h.habilidad.nombre} (nivel ${h.nivel}/10)`)
+            .join(', ');
+          context += `**Habilidades principales:** ${habilidades}\n`;
+        }
+
+        if (candidato.lenguajesCandidato.length > 0) {
+          const lenguajes = candidato.lenguajesCandidato
+            .map(l => `${l.lenguaje.nombre} (nivel ${l.nivel}/10)`)
+            .join(', ');
+          context += `**Idiomas:** ${lenguajes}\n`;
+        }
+
+        if (candidato.experiencias.length > 0) {
+          const experiencias = candidato.experiencias
+            .map(e => `${e.titulo} en ${e.empresa}`)
+            .join(', ');
+          context += `**Experiencia reciente:** ${experiencias}\n`;
+        }
+
+        if (candidato.educaciones.length > 0) {
+          const educaciones = candidato.educaciones
+            .map(e => `${e.titulo} - ${e.institucion} (${e.estado})`)
+            .join(', ');
+          context += `**Educación:** ${educaciones}\n`;
+        }
+
+        if (candidato.postulaciones.length > 0) {
+          context += `**Postulaciones recientes:** ${candidato.postulaciones.length} vacantes\n`;
+          const postulaciones = candidato.postulaciones
+            .map(p => `${p.vacante.titulo} en ${p.vacante.empresa.name} (compatibilidad: ${p.puntuacion_compatibilidad?.toFixed(0) || 'N/A'}%)`)
+            .slice(0, 3)
+            .join(', ');
+          context += `  - ${postulaciones}\n`;
+        }
+      }
+    }
+
+    // Si es reclutador
+    if (user.reclutador) {
+      const reclutador = await this.prisma.reclutador.findUnique({
+        where: { id: user.reclutador.id },
+        include: {
+          usuario: {
+            select: {
+              name: true,
+              lastname: true,
+              correo: true,
+            },
+          },
+          empresa: {
+            select: {
+              name: true,
+              area: true,
+            },
+          },
+          vacantes: {
+            select: {
+              titulo: true,
+              estado: true,
+              _count: {
+                select: {
+                  postulaciones: true,
+                },
+              },
+            },
+            take: 5,
+            orderBy: { creado_en: 'desc' },
+          },
+        },
+      });
+
+      if (reclutador) {
+        context += `**Tipo:** Reclutador\n`;
+        context += `**Nombre:** ${reclutador.usuario.name} ${reclutador.usuario.lastname}\n`;
+        context += `**Email:** ${reclutador.usuario.correo}\n`;
+        context += `**Empresa:** ${reclutador.empresa.name}\n`;
+        
+        if (reclutador.empresa.area) {
+          context += `**Área de la empresa:** ${reclutador.empresa.area}\n`;
+        }
+
+        if (reclutador.posicion) {
+          context += `**Posición:** ${reclutador.posicion}\n`;
+        }
+
+        if (reclutador.vacantes.length > 0) {
+          context += `**Vacantes publicadas:** ${reclutador.vacantes.length}\n`;
+          const vacantes = reclutador.vacantes
+            .map(v => `${v.titulo} (${v.estado}, ${v._count.postulaciones} postulaciones)`)
+            .slice(0, 3)
+            .join(', ');
+          context += `  - ${vacantes}\n`;
+        }
+      }
+    }
+
+    return context;
   }
 
   private cleanExpiredSessions() {
