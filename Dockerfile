@@ -4,7 +4,7 @@ WORKDIR /app
 
 COPY package*.json ./
 
-RUN npm ci --only=production
+RUN npm ci
 
 COPY . .
 
@@ -14,6 +14,8 @@ ENV DATABASE_URL=$DATABASE_URL
 RUN npx prisma generate
 
 RUN npm run build
+
+RUN npm prune --production
 
 EXPOSE 3000
 
