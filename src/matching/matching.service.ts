@@ -110,7 +110,7 @@ export class MatchingService {
       const matchingData = await this.getMatchingData(vacanteId);
 
       // 2. Enviar datos al microservicio k-means
-      const kmeansUrl = 'http://127.0.0.1:8000/api/matching';
+      const kmeansUrl = 'https://smar-hire-ml-production.up.railway.app/api/matching';
       const response = await firstValueFrom(
         this.httpService.post(kmeansUrl, matchingData)
       );
