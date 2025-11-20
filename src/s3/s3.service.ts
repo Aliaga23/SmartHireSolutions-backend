@@ -30,7 +30,6 @@ export class S3Service {
       Key: key,
       Body: file,
       ContentType: mimeType,
-      ACL: 'public-read',
     });
 
     await this.s3Client.send(command);
